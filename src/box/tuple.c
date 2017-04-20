@@ -119,7 +119,7 @@ tuple_next(struct tuple_iterator *it)
 
 char *
 tuple_extract_key(const struct tuple *tuple, const struct key_def *key_def,
-		  uint32_t *key_size)
+		uint32_t *key_size)
 {
 	const char *data = tuple_data(tuple);
 	uint32_t part_count = key_def->part_count;
@@ -128,13 +128,20 @@ tuple_extract_key(const struct tuple *tuple, const struct key_def *key_def,
 	const uint32_t *field_map = tuple_field_map(tuple);
 
 	/* Calculate key size. */
-	for (uint32_t i = 0; i < part_count; ++i) {
+	for (uint32_t i = 0; i < part_count;) {
+		uint32_t len = key_def_seq_len(key_def, key_def->parts[i].fieldno);
 		const char *field =
 			tuple_field_raw(format, data, field_map,
 					key_def->parts[i].fieldno);
 		const char *end = field;
+		if (len > 1) {
+			end = tuple_field_raw(format, data, field_map,
+					key_def->parts[i].fieldno + len - 1);
+		}
+
 		mp_next(&end);
 		bsize += end - field;
+		i += len;
 	}
 
 	char *key = (char *) region_alloc(&fiber()->gc, bsize);
@@ -143,15 +150,21 @@ tuple_extract_key(const struct tuple *tuple, const struct key_def *key_def,
 		return NULL;
 	}
 	char *key_buf = mp_encode_array(key, part_count);
-	for (uint32_t i = 0; i < part_count; ++i) {
+	for (uint32_t i = 0; i < part_count;) {
+		uint32_t len = key_def_seq_len(key_def, key_def->parts[i].fieldno);
 		const char *field =
 			tuple_field_raw(format, data, field_map,
 					key_def->parts[i].fieldno);
 		const char *end = field;
+		if (len > 1) {
+			end = tuple_field_raw(format, data, field_map,
+					key_def->parts[i].fieldno + len - 1);
+		}
 		mp_next(&end);
 		bsize = end - field;
 		memcpy(key_buf, field, bsize);
 		key_buf += bsize;
+		i += len;
 	}
 	if (key_size != NULL)
 		*key_size = key_buf - key;
@@ -177,15 +190,16 @@ tuple_extract_key_raw(const char *data, const char *data_end,
 	const char *field = field0;
 	const char *field_end = field0_end;
 	uint32_t current_fieldno = 0;
-	for (uint32_t i = 0; i < key_def->part_count; i++) {
+	for (uint32_t i = 0; i < key_def->part_count;) {
 		uint32_t fieldno = key_def->parts[i].fieldno;
+		uint32_t len = key_def_seq_len(key_def, fieldno);
 		if (fieldno < current_fieldno) {
 			/* Rewind. */
 			field = field0;
 			field_end = field0_end;
 			current_fieldno = 0;
 		}
-		while (current_fieldno < fieldno) {
+		while (current_fieldno < fieldno + len - 1) {
 			field = field_end;
 			mp_next(&field_end);
 			current_fieldno++;
@@ -193,6 +207,7 @@ tuple_extract_key_raw(const char *data, const char *data_end,
 		memcpy(key_buf, field, field_end - field);
 		key_buf += field_end - field;
 		assert(key_buf - key <= data_end - data);
+		i += len;
 	}
 	if (key_size != NULL)
 		*key_size = (uint32_t)(key_buf - key);

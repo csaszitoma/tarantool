@@ -556,6 +556,19 @@ key_def_is_sequential(const struct key_def *key_def)
 	return true;
 }
 
+static inline uint32_t
+key_def_seq_len(const struct key_def *key_def, uint32_t field_no)
+{
+	uint32_t len = 1;
+	for (uint32_t part_id = field_no; part_id < key_def->part_count - 1; part_id++){
+		if (key_def->parts[part_id].fieldno + 1 !=
+				key_def->parts[part_id + 1].fieldno) {
+			break;
+		}
+		len++;
+	}
+	return len;
+}
 /** A helper table for key_mp_type_validate */
 extern const uint32_t key_mp_type[];
 
