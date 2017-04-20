@@ -840,6 +840,23 @@ err:
 	return -1;
 }
 
+int
+xdir_touch_xlog(struct xdir *dir, const struct vclock *vclock)
+{
+	if (dir->type != SNAP) {
+		return -1;
+	}
+	char *filename;
+	int64_t signature = vclock_sum(vclock);
+	filename = xdir_format_filename(dir, signature, NONE);
+	if (utime(filename, NULL) != 0) {
+		diag_set(SystemError, "Can't update xlog timestamp: '%s'",
+			 filename);
+		return -1;
+	}
+	return 0;
+}
+
 /**
  * In case of error, writes a message to the error log
  * and sets errno.
